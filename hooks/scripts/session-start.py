@@ -16,6 +16,7 @@ from pathlib import Path
 ATLAS_DIR = Path.home() / ".claude" / "atlas"
 REGISTRY = ATLAS_DIR / "registry.yaml"
 CACHE_DIR = ATLAS_DIR / "cache" / "projects"
+PROVIDERS_DIR = ATLAS_DIR / "providers"
 MAX_PROJECTS_OUTPUT = 30
 
 
@@ -190,9 +191,25 @@ def _python_find_dirs(directory: str, name: str, max_depth: int) -> list[str]:
     return results
 
 
-def fmt_line(slug: str, description: str, width: int = 20) -> str:
-    """Format a project line: slug padded + description."""
-    return f"  {slug:<{width}} {description}"
+def get_relay_trackers(project_path: Path) -> str:
+    """Get relay tracker names for a project, or empty string."""
+    relay_file = project_path / ".claude" / "relay.yaml"
+    if not relay_file.is_file():
+        return ""
+    trackers = []
+    for raw_line in relay_file.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if line.startswith("- name:"):
+            name = line.split(":", 1)[1].strip().strip('"').strip("'")
+            if name:
+                trackers.append(name)
+    return ",".join(trackers) if trackers else ""
+
+
+def fmt_line(slug: str, description: str, trackers: str = "", width: int = 20) -> str:
+    """Format a project line: slug padded + description + optional trackers."""
+    suffix = f" | issues: {trackers}" if trackers else ""
+    return f"  {slug:<{width}} {description}{suffix}"
 
 
 MAIL_SERVER_URL = os.environ.get("AGENT_MAIL_URL", "http://localhost:8765")
@@ -327,11 +344,19 @@ def main():
             if slug not in local_unregistered_config:
                 local_unregistered_git.append(slug)
 
+    # --- Read relay trackers for projects ---
+    relay_info: dict[str, str] = {}
+    for proj in projects:
+        t = get_relay_trackers(proj["abs_path"])
+        if t:
+            relay_info[proj["slug"]] = t
+
     # --- Build output ---
     lines: list[str] = []
     lines.append(
-        "[atlas] Use atlas_search_projects to find project repo paths. "
-        "NEVER edit files under ~/.claude/plugins/cache/ — use atlas to find the real repo."
+        "[atlas] Project registry — use atlas MCP tools to look up projects. "
+        "For issue tracking use the /relay:issue skill (NOT gh/gitlab CLI). "
+        "NEVER edit files under ~/.claude/plugins/cache/."
     )
     has_local = local_registered or local_unregistered_config or local_unregistered_git
 
@@ -351,10 +376,10 @@ def main():
         lines.append("[atlas] Projects:")
 
         # Current project first
-        lines.append(fmt_line(current_slug, summaries.get(current_slug, "no summary")))
+        lines.append(fmt_line(current_slug, summaries.get(current_slug, "no summary"), relay_info.get(current_slug, "")))
         for proj in projects:
             if proj["slug"] != current_slug:
-                lines.append(fmt_line(proj["slug"], summaries.get(proj["slug"], "no summary")))
+                lines.append(fmt_line(proj["slug"], summaries.get(proj["slug"], "no summary"), relay_info.get(proj["slug"], "")))
 
     elif has_local:
         # Case 2: Workspace root with child projects
@@ -362,11 +387,12 @@ def main():
         lines.append("[atlas] Local projects:")
 
         for slug in local_registered:
-            lines.append(fmt_line(slug, summaries.get(slug, "no summary")))
+            lines.append(fmt_line(slug, summaries.get(slug, "no summary"), relay_info.get(slug, "")))
         for slug in local_unregistered_config:
             lines.append(fmt_line(slug, "(not registered — /atlas:projects add)"))
         for slug in local_unregistered_git:
             lines.append(fmt_line(slug, "(git repo, not registered)"))
+
 
         # Other projects (registered but not local)
         all_local = set(local_registered)
@@ -374,13 +400,13 @@ def main():
         if others:
             lines.append("[atlas] Other projects:")
             for proj in others:
-                lines.append(fmt_line(proj["slug"], summaries.get(proj["slug"], "no summary")))
+                lines.append(fmt_line(proj["slug"], summaries.get(proj["slug"], "no summary"), relay_info.get(proj["slug"], "")))
 
     else:
         # Case 3: No match, no children
         lines.append("[atlas] Projects:")
         for proj in projects:
-            lines.append(fmt_line(proj["slug"], summaries.get(proj["slug"], "no summary")))
+            lines.append(fmt_line(proj["slug"], summaries.get(proj["slug"], "no summary"), relay_info.get(proj["slug"], "")))
 
     # Cap output
     if len(lines) > MAX_PROJECTS_OUTPUT + 3:
