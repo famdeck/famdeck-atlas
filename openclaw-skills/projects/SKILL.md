@@ -1,6 +1,6 @@
 ---
 name: projects
-description: "Manage the atlas project registry — add, list, show, edit, remove, link, and refresh projects. Triggers: 'list projects', 'show project', 'add project', 'register project', 'remove project', 'project details', 'project info', 'refresh projects', 'project links', 'what projects', 'my projects', 'atlas projects'. Use when viewing, searching, or modifying the project registry."
+description: "Manage the atlas project registry — list, add, show, edit, remove, link, and refresh projects. Use whenever the user wants to work with registered projects: view what's registered, add or remove a project, update its config or links, or refresh caches. Do NOT use for code exploration across projects or for initializing atlas for the first time."
 metadata: {"openclaw":{"emoji":"🗺️"}}
 ---
 
@@ -30,58 +30,60 @@ Slug can be positional or via `--project <slug>`.
 - **Cache**: `~/.claude/atlas/cache/projects/<slug>.yaml`
 - **Project config**: `<project-path>/.claude/atlas.yaml`
 
-## Subcommand: list
+## list (default)
 
 1. Read registry, then read each project's cached config from `~/.claude/atlas/cache/projects/<slug>.yaml`.
 2. Apply `--group` / `--tag` filters if given.
-3. If most caches are empty, suggest `/projects refresh`.
+3. If most caches are missing, suggest running `refresh`.
 
 Output as table: Slug, Group, Tags, Summary.
 
-## Subcommand: add
+## add
 
 1. Determine path (`--path` or cwd). Verify `.git/` exists.
 2. Auto-detect repo URL from `.git/config` remote origin.
-3. Suggest slug from directory name (lowercase kebab-case), confirm with user. Warn if slug already exists.
+3. Suggest slug from directory name (lowercase kebab-case). Confirm with user. Warn if slug already exists.
 4. Append to registry:
    ```yaml
    <slug>:
      path: <path>
      repo: <repo-url>
    ```
-5. If `.claude/atlas.yaml` exists: validate `summary` (<100 chars), cache it. If missing: offer to create with auto-detected name, summary, tags, links — then cache.
+5. Handle `.claude/atlas.yaml`:
+   - **Exists** — validate `summary` (<100 chars), cache it
+   - **Missing** — offer to create with auto-detected name/tags/links, then cache
 
-Confirm: `Registered: <slug> -> <path>`
+Confirm: `Registered: <slug> → <path>`
 
-## Subcommand: show
+## show
 
 1. Resolve slug (from arg or detect from cwd via registry path matching).
 2. Read registry entry + cached config.
 3. Display: name, slug, path, repo, group, tags, links, notes.
 
-## Subcommand: edit
+## edit
 
 1. Resolve slug. Read `<project-path>/.claude/atlas.yaml` from disk (not cache).
 2. Present current content, ask what to change.
-3. Apply edits, then refresh cache.
+3. Apply edits, refresh cache.
 
-## Subcommand: remove
+## remove
 
 1. Require slug. Confirm with user.
 2. Remove from `registry.yaml`. Delete cache file if present.
 
-## Subcommand: link
+## link
 
-1. Resolve project slug.
+1. Resolve project slug (from arg or cwd).
 2. Read `.claude/atlas.yaml`, add/update entry under `links:`.
 3. Refresh cache.
 
-## Subcommand: refresh
+## refresh
 
 1. If slug given, refresh that project only; otherwise refresh all.
 2. For each: check path exists, read `.claude/atlas.yaml`, update cache with `_cache_meta`. Warn on missing paths or configs.
 
-Output: list of projects with status (cached / path not found / no config).
+Output: table of projects with status (cached / path not found / no config).
 
 ## Schema Reference
 
