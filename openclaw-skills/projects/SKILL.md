@@ -2,6 +2,7 @@
 name: projects
 description: "Manage the atlas project registry — list, add, show, edit, remove, link, and refresh projects. Use whenever the user wants to work with registered projects: view what's registered, add or remove a project, update its config or links, or refresh caches. Do NOT use for code exploration across projects or for initializing atlas for the first time."
 metadata: {"openclaw":{"emoji":"🗺️"}}
+allowed-tools: "Read,Bash,Glob,Grep,Edit,Write"
 ---
 
 # Atlas Project Management
