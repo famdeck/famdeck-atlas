@@ -1,32 +1,25 @@
 ---
 name: init
-description: Initialize atlas for first-time use — creates directories, registers the SessionStart hook, discovers and registers projects in the current directory. Use when atlas has not been set up yet or to re-scan for projects.
+description: "Initialize atlas — creates directories, registers SessionStart hook, discovers and registers projects. Triggers: 'init atlas', 'setup atlas', 'configure atlas', 'register projects', 'scan projects', 'start atlas', 'atlas setup', 'initialize atlas', 'set up atlas'. Also use when atlas is not yet configured, no registry exists, or projects need re-scanning."
 argument-hint: "[--scan <path>]"
 ---
 
 # Atlas Initialization
 
-Set up atlas for first-time use and discover projects.
+Set up atlas for first-time use: create directories, register the session hook, discover and register projects.
 
 ## Parse Arguments
 
 Parse `$ARGUMENTS`:
-- `--scan <path>`: Directory to scan for projects. Defaults to current working directory.
+- `--scan <path>`: directory to scan for projects (default: cwd)
 
-## Step 1: Create Directory Structure
+## Step 1: Create Directories and Registry
 
-Create the atlas directories if they don't exist:
-
-```
-~/.claude/atlas/
-~/.claude/atlas/cache/projects/
+```bash
+mkdir -p ~/.claude/atlas/cache/projects/
 ```
 
-Use Bash `mkdir -p` for this.
-
-## Step 2: Create Registry
-
-If `~/.claude/atlas/registry.yaml` doesn't exist, create it with:
+If `~/.claude/atlas/registry.yaml` does not exist, create it:
 
 ```yaml
 # Atlas project registry — maps project slugs to filesystem paths.
@@ -35,17 +28,15 @@ If `~/.claude/atlas/registry.yaml` doesn't exist, create it with:
 projects:
 ```
 
-If it already exists, leave it as-is.
+Leave existing registry untouched.
 
-## Step 3: Register SessionStart Hook (Workaround)
+## Step 2: Register SessionStart Hook
 
-**Context**: Plugin SessionStart hooks don't surface output to Claude due to a known bug (#16538). As a workaround, register the hook directly in `~/.claude/settings.local.json` where it works correctly.
+Plugin SessionStart hooks don't surface output due to bug #16538. Register directly in `~/.claude/settings.local.json` as a workaround.
 
-1. Read `~/.claude/settings.local.json` (create `{}` if it doesn't exist)
-2. Determine the absolute path to the hook script. The plugin root is the directory containing `.claude-plugin/plugin.json`. From the plugin root, the script is at `hooks/scripts/session-start.py`.
-   - To find the plugin root: use the path of this skill file and navigate up to find `.claude-plugin/plugin.json`
-   - The plugin is installed at a path like `/Users/.../famdeck-atlas/` — resolve this to an absolute path
-3. Add a SessionStart hook entry. Use Bash with `jq` to merge:
+1. Resolve the plugin root (ancestor directory containing `.claude-plugin/plugin.json`). The hook script is at `<plugin-root>/hooks/scripts/session-start.py`.
+2. Read `~/.claude/settings.local.json` (create `{}` if missing).
+3. Add the hook idempotently via `jq`:
 
 ```bash
 jq --arg script "python3 <ABSOLUTE_PATH>/hooks/scripts/session-start.py" '
@@ -65,63 +56,38 @@ jq --arg script "python3 <ABSOLUTE_PATH>/hooks/scripts/session-start.py" '
 ' ~/.claude/settings.local.json > /tmp/atlas-settings.json && mv /tmp/atlas-settings.json ~/.claude/settings.local.json
 ```
 
-4. Confirm registration to the user.
+## Step 3: Scan for Projects
 
-## Step 4: Scan for Projects
+Scan the target directory for git repos up to 3 levels deep:
 
-Scan the target directory (cwd or `--scan` path) for projects:
+```bash
+find <scan-path> -maxdepth 3 -name ".git" -type d 2>/dev/null
+```
 
-1. Use Bash to find `.git/` directories up to 3 levels deep:
-   ```bash
-   find <scan-path> -maxdepth 3 -name ".git" -type d 2>/dev/null
-   ```
+For each repo found, collect:
+- **path**: parent of `.git/`
+- **slug**: directory name as lowercase kebab-case
+- **repo**: remote origin URL from `.git/config`
+- **has atlas.yaml**: whether `<path>/.claude/atlas.yaml` exists
 
-2. For each found git repo:
-   - Extract the project directory (parent of `.git/`)
-   - Check if `.claude/atlas.yaml` exists in it
-   - Detect repo URL from `.git/config` (read the `[remote "origin"]` url)
-   - Generate a slug from the directory name (lowercase kebab-case)
+Present as a table, then ask the user (via AskUserQuestion): Register all (default) / Let me choose / Skip.
 
-3. Present discovered projects as a table:
-   ```
-   Found N projects:
-     slug              path                                    has atlas.yaml
-     digital-web-sdk   ~/dev/digital/.../web-sdk               yes
-     digital-collector ~/dev/digital/digital-collector          no
-     my-tool       ~/dev/personal/my-tool                yes
-   ```
+## Step 4: Register Selected Projects
 
-4. Ask the user which projects to register using AskUserQuestion:
-   - Option 1: "Register all" (default/recommended)
-   - Option 2: "Let me choose"
-   - Option 3: "Skip for now"
+For each project to register, append to `~/.claude/atlas/registry.yaml`:
 
-## Step 5: Register Selected Projects
+```yaml
+  <slug>:
+    path: <path>
+    repo: <repo-url>
+```
 
-For each project to register:
+Then handle the project config:
+- **`.claude/atlas.yaml` exists**: cache to `~/.claude/atlas/cache/projects/<slug>.yaml` (prepend `_cache_meta`). Warn if `summary` field is missing.
+- **Missing**: offer to create a minimal one — auto-detect `name` from `package.json`/`Cargo.toml`/`build.gradle`/directory, ask for `summary` (<100 chars), auto-detect `tags` from language files, guess CI link from repo URL. Write it and cache.
 
-1. Read the current `~/.claude/atlas/registry.yaml`
-2. Append the project entry under `projects:`:
-   ```yaml
-     <slug>:
-       path: <path>
-       repo: <repo-url>
-   ```
-3. If `.claude/atlas.yaml` exists in the project:
-   - Read it and cache to `~/.claude/atlas/cache/projects/<slug>.yaml` (prepend `_cache_meta`)
-   - Check that `summary` field exists — warn if missing
-4. If `.claude/atlas.yaml` does NOT exist:
-   - Offer to create a minimal one:
-     - Auto-detect `name` from `package.json` (name field), `Cargo.toml`, `build.gradle`, or directory name
-     - Ask for `summary` (suggest based on detected info, must be <100 chars)
-     - Auto-detect tags from language/framework files present
-     - Guess CI link from repo URL pattern
-   - Write `.claude/atlas.yaml` to the project
-   - Cache it
+## Output
 
-## Step 6: Summary
-
-Print a summary:
 ```
 Atlas initialized!
   Registry: ~/.claude/atlas/registry.yaml

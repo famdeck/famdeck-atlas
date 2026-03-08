@@ -9,6 +9,8 @@ tools:
   - Grep
   - Glob
 maxTurns: 15
+mcpServers:
+  - atlas
 ---
 
 # Atlas Explorer

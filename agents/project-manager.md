@@ -11,6 +11,7 @@ tools:
   - Grep
   - AskUserQuestion
 maxTurns: 12
+mcpServers: []
 ---
 
 # Atlas Project Manager
